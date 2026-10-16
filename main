@@ -1,9 +1,8 @@
 --[[
-    JJS No Stun (Optimized & Smooth Version)
-    - Khắc phục hiện tượng khựng (stutter) bằng cơ chế bắt sự kiện thay vì quét liên tục.
+    JJS No Stun (Optimized + Floating HUB Button + Draggable)
 ]]
 
-local Players = Service and game:GetService("Players") or game:GetService("Players")
+local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -27,7 +26,6 @@ local settings = {
     Hitstop = true,
     Flags = true,
     RestoreMove = true,
-    WalkOverride = 0,
 }
 
 local T = {
@@ -36,10 +34,12 @@ local T = {
     Element = Color3.fromRGB(26, 26, 38),
     Hover = Color3.fromRGB(36, 36, 52),
     Off = Color3.fromRGB(52, 52, 72),
+    Stroke = Color3.fromRGB(44, 44, 64),
     Accent = Color3.fromRGB(0, 229, 255),
     Good = Color3.fromRGB(70, 220, 120),
     Text = Color3.fromRGB(238, 238, 245),
     Sub = Color3.fromRGB(150, 150, 172),
+    Danger = Color3.fromRGB(255, 70, 70),
 }
 
 local function create(class, props, children)
@@ -55,25 +55,106 @@ local function create(class, props, children)
 end
 
 local function corner(r) return create("UICorner", { CornerRadius = UDim.new(0, r) }) end
+local function stroke(color, thickness)
+    return create("UIStroke", { Color = color, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+end
 
--- Giao diện gọn gàng
-local Gui = create("ScreenGui", { Name = "JJS_NoStun", ResetOnSpawn = false, Parent = parentGui })
+local function makeDraggable(handle, target)
+    local dragging, moved = false, false
+    local startPos, startInput
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            moved = false
+            startInput = input.Position
+            startPos = target.Position
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - startInput
+            if delta.Magnitude > 5 then moved = true end
+            if moved then
+                target.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+    return function() return moved end
+end
+
+-- GUI chính và GUI nút lơ lửng
+local MainGui = create("ScreenGui", { Name = "JJS_NoStunMain", ResetOnSpawn = false, Parent = parentGui })
+local FloatGui = create("ScreenGui", { Name = "JJS_NoStunFloat", ResetOnSpawn = false, Enabled = false, Parent = parentGui })
+
 local Panel = create("Frame", {
-    Parent = Gui, Position = UDim2.new(0, 360, 0, 90), Size = UDim2.new(0, 310, 0, 360),
+    Parent = MainGui,
+    Position = UDim2.new(0.5, -155, 0.5, -190),
+    Size = UDim2.new(0, 310, 0, 380),
     BackgroundColor3 = T.Bg,
-}, { corner(10), create("UIStroke", { Color = T.Accent, Thickness = 1.5, Transparency = 0.3 }) })
+}, { corner(10), stroke(T.Accent, 1.5) })
 
 local TopBar = create("Frame", { Parent = Panel, Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.Panel }, { corner(10) })
+create("Frame", { Parent = TopBar, Position = UDim2.new(0, 0, 1, -10), Size = UDim2.new(1, 0, 0, 10), BackgroundColor3 = T.Panel })
 create("TextLabel", {
-    Parent = TopBar, BackgroundTransparency = 1, Position = UDim2.new(0, 14, 0, 0),
-    Size = UDim2.new(1, -50, 1, 0), Font = Enum.Font.GothamBold, Text = "🧍 JJS No Stun (Mượt)",
-    TextSize = 14, TextColor3 = T.Accent, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = TopBar, BackgroundTransparency = 1,
+    Position = UDim2.new(0, 14, 0, 0), Size = UDim2.new(1, -80, 1, 0),
+    Font = Enum.Font.GothamBold, Text = "🧍 JJS No Stun", TextSize = 14,
+    TextColor3 = T.Accent, TextXAlignment = Enum.TextXAlignment.Left,
 })
-local CloseBtn = create("TextButton", {
-    Parent = TopBar, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0),
-    Size = UDim2.new(0, 26, 0, 26), BackgroundColor3 = T.Element, Font = Enum.Font.GothamBold,
-    Text = "X", TextSize = 12, TextColor3 = T.Text, AutoButtonColor = false,
-}, { corner(6) })
+
+local function topButton(text, xOff, hoverColor, cb)
+    local b = create("TextButton", {
+        Parent = TopBar, AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, xOff, 0.5, 0), Size = UDim2.new(0, 26, 0, 26),
+        BackgroundColor3 = T.Element, Font = Enum.Font.GothamBold, Text = text,
+        TextSize = 12, TextColor3 = T.Text, AutoButtonColor = false,
+    }, { corner(6) })
+    b.MouseEnter:Connect(function() b.BackgroundColor3 = hoverColor end)
+    b.MouseLeave:Connect(function() b.BackgroundColor3 = T.Element end)
+    b.MouseButton1Click:Connect(cb)
+    return b
+end
+
+makeDraggable(TopBar, Panel)
+
+-- Nút lơ lửng "HUB"
+local FloatBtn = create("TextButton", {
+    Parent = FloatGui,
+    BackgroundColor3 = T.Bg,
+    BackgroundTransparency = 0.1,
+    Position = UDim2.new(0, 50, 0, 200),
+    Size = UDim2.new(0, 56, 0, 56),
+    Font = Enum.Font.GothamBold,
+    Text = "NO STUN",
+    TextSize = 10,
+    TextColor3 = T.Accent,
+    AutoButtonColor = false,
+}, { create("UICorner", { CornerRadius = UDim.new(1, 0) }), stroke(T.Accent, 2) })
+local floatWasDragged = makeDraggable(FloatBtn, FloatBtn)
+
+local function setVisible(state)
+    MainGui.Enabled = state
+    FloatGui.Enabled = not state
+end
+
+topButton("X", -10, T.Danger, function()
+    if env.JJS_NoStunCleanup then env.JJS_NoStunCleanup() end
+end)
+topButton("–", -42, T.Hover, function() setVisible(false) end)
+
+FloatBtn.MouseButton1Click:Connect(function()
+    if floatWasDragged() then return end
+    setVisible(true)
+end)
 
 local List = create("ScrollingFrame", {
     Parent = Panel, BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, 48),
@@ -132,13 +213,12 @@ toggleRow("Khôi phục tốc độ chạy", true, 5, function(v) settings.Resto
 
 refreshStatus()
 
--- LOGIC TỐI ƯU (DÙNG SỰ KIỆN THAY VÌ QUÉT LIÊN TỤC)
+-- LOGIC CHỐNG STUN TỐI ƯU
 local function hookCharacter(char)
     local hum = char:WaitForChild("Humanoid", 5)
     local hrp = char:WaitForChild("HumanoidRootPart", 5)
     if not (hum and hrp) then return end
 
-    -- 1. Bắt sự kiện đổi trạng thái thay vì check trong Heartbeat gây nặng máy
     track(hum.StateChanged:Connect(function(old, new)
         if not settings.Enabled or not settings.Ragdoll then return end
         if new == Enum.HumanoidStateType.Ragdoll or new == Enum.HumanoidStateType.FallingDown or hum.PlatformStand then
@@ -148,7 +228,6 @@ local function hookCharacter(char)
         end
     end))
 
-    -- 2. Chỉ xóa BallSocketConstraint ngay khi chúng được sinh ra trên nhân vật
     track(char.DescendantAdded:Connect(function(d)
         if not settings.Enabled then return end
         if settings.Ragdoll and d:IsA("BallSocketConstraint") then
@@ -172,19 +251,16 @@ end
 if LocalPlayer.Character then task.spawn(hookCharacter, LocalPlayer.Character) end
 track(LocalPlayer.CharacterAdded:Connect(function(char) task.spawn(hookCharacter, char) end))
 
--- 3. Vòng lặp siêu nhẹ chỉ để kiểm tra WalkSpeed và Animation (không quét GetDescendants nặng nề)
 track(RunService.Heartbeat:Connect(function()
     if not settings.Enabled then return end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
-    -- Khôi phục WalkSpeed nếu bị ép về 0
     if settings.RestoreMove and hum.WalkSpeed < 2 then
         hum.WalkSpeed = 16
     end
 
-    -- Gỡ Hitstop animation bị đóng băng
     if settings.Hitstop then
         local animator = hum:FindFirstChildOfClass("Animator")
         if animator then
@@ -201,11 +277,11 @@ local function cleanup()
     settings.Enabled = false
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
     table.clear(connections)
-    Gui:Destroy()
+    MainGui:Destroy()
+    FloatGui:Destroy()
     env.JJS_NoStunCleanup = nil
 end
 env.JJS_NoStunCleanup = cleanup
-CloseBtn.MouseButton1Click:Connect(cleanup)
 
 track(UserInputService.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == TOGGLE_KEY then
